@@ -57,45 +57,57 @@ char* getAddressIp(char* hostname)
 {
     struct hostent* hostInfo = gethostbyname(hostname);
     char* hostIp = inet_ntoa(*((struct in_addr*)hostInfo->h_addr_list[0]));
-    return hostInfo->h_addr_list[0];
+    //return hostInfo->h_addr_list[0];
     
     //printf("This is the host name: %s, this is ip: %s\n",hostInfo->h_name,hostIp);
     
-    //return hostIp;
+    return hostIp;
 }
 
 int main(int argc, char** arv)
 {
     
     
-    char from[] = "From: Busy Beaver <beaver@busy.com>\n";
-    char to[] = "To: Jakob Eriksson <jakob@uic.edu>\n";
-    char subject[] = "Subject: Give me an A\n\n";
-    char body[] = "My program sends emails. Thus, Ideserve an A.";
+    char from[] = "From: Busy Beaver <beaver@busy.com>\r\n";
+    char to[] = "To: Jakob Eriksson <jakob@uic.edu>\r\n";
+    char subject[] = "Subject: Give me an A\r\n\n";
+    char body[] = "My program sends emails. Thus, Ideserve an A.\r\n";
     
     
     
     char* hostIp = getAddressIp("uic.edu");
+    printf("Host ip: %s\n",hostIp);
     
     int mySock = socket(AF_INET,SOCK_STREAM,0);
-    struct sockaddr mySockAddr;
-    mySockAddr.sa_family = AF_INET;
-    strcpy(mySockAddr.sa_data, hostIp);
-    printf("\n\n hostIp length--: %s\n",mySockAddr.sa_data);
-    mySockAddr.sa_len = htons(25);
-    //int sockConnect = connect(mySock, (struct sockaddr*)&mySockAddr, sizeof(mySockAddr));
+    struct sockaddr_in mySockAddr;
     
     
-    //printf("mysocket connection: %d\n",sockConnect);
+
+    if(inet_pton(AF_INET, hostIp, &(mySockAddr.sin_addr))<=0)
+    {
+        printf("\nInvalid address/ Address not supported \n");
+        return -1;
+    }
+    printf("\n\n hostIp length--: %d\n",mySockAddr.sin_addr);
+    mySockAddr.sin_port = htons(25);
+    
+    
+    printf("socket Connecting\n");
+    int connectCode = connect(mySock, (struct sockaddr*)&mySockAddr, sizeof(mySockAddr));
+    if (connectCode < 0)
+    {
+        printf("\n Error : Connect Failed \n");
+        return 1;
+    }
+    
+    
+    printf("mysocket connection: %d\n",connectCode);
+    
+    int sendCode = send(mySock,from,strlen(from),0);
     
     //getMailUrl("uic.edu");
     
     //getAddressInfo("uic.edu");
-    
-    
-    
-    
-    
     
     return 0;
 }
