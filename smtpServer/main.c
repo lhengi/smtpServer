@@ -24,37 +24,62 @@
 int mySock;
 char* getMailUrl(char* hostName)
 {
-    char* tmpMail = malloc(sizeof(char)*80);
-    tmpMail[79] = '\0';
     
-    char* command = malloc(sizeof(char)*80);
+    char* tmpMail = malloc(sizeof(char)*200);
+    memset(tmpMail, '\0', 200);
+    
+    char* command = malloc(sizeof(char)*256);
+    memset(command, '\0', 256);
     strcat(command, "host -t MX ");
     strcat(command, hostName);
     
     FILE* result = popen(command,"r");
     if (result == NULL)
     {
+        
+        free(command);
         printf("Woops something went wrong with popen()\n");
+        pclose(result);
         return NULL;
     }
-    fgets(tmpMail,79,result);
-    printf(tmpMail);
+    fgets(tmpMail,256,result);
+    printf("!\n\nTMP Mail%s\n",tmpMail);
     
     char* ptr = strtok(tmpMail," ");
     char* lastPtr = ptr;
     
+    int preNot = 0;
     while(ptr != NULL)
     {
-        lastPtr = ptr;
+        if(ptr!= NULL)
+            lastPtr = ptr;
         //printf("*%s\n",lastPtr);
+        
+        if(ptr != NULL && (strcmp(ptr, "3(NXDOMAIN)\n") == 0 || strcmp(ptr, "3(NXDOMAIN)") == 0))
+        {
+            
+            free(command);
+            pclose(result);
+            return NULL;
+        }
         ptr = strtok(NULL," ");
+                  
+    }
+    if(lastPtr == NULL)
+    {
+        
+        free(command);
+        pclose(result);
+        return NULL;
     }
 
     lastPtr[strlen(lastPtr)-2] = '\0';
     
-    printf("========> THis is the mail server: %s\n",lastPtr);
-    
     pclose(result);
+    
+    free(command);
+    
+    //printf("lastPtr: %s\n",lastPtr);
     return lastPtr;
 }
 
@@ -102,7 +127,12 @@ int isEmailValid(char* email)
 
 char* getAddressIp(char* hostname)
 {
+
+    //printf("###########\nThis is the host name in get Address IP: %s| %d\n", hostname,strlen(hostname));
+    //printf("###########\nThis is the host name in get Address IP: %d\n", hostname);
+
     struct hostent* hostInfo = gethostbyname(hostname);
+
     char* hostIp = inet_ntoa(*((struct in_addr*)hostInfo->h_addr_list[0]));
     //return hostInfo->h_addr_list[0];
     
@@ -119,7 +149,7 @@ void sendMsg(char* msg)
 
 }
 
-void readMsg()
+int readMsg()
 {
     
     char* buf = malloc(sizeof(char)*(BUFSIZ+1));
@@ -128,6 +158,18 @@ void readMsg()
     int readRsult = recv(mySock, buf, BUFSIZ, 0);
     printf("%s\n",buf);
     free(buf);
+    
+    
+    char* ptr = strtok(buf," ");
+    
+    if(ptr != NULL && (strcmp(ptr, "450") == 0 ||strcmp(ptr, "554") == 0 || strcmp(ptr, "502") == 0 || strcmp(ptr, "550") == 0  ))
+    {
+        return 0;
+    }
+
+    
+    
+    return 1;
 }
 
 
@@ -152,6 +194,13 @@ char* getEmailAddress(char* head)
         if (head[i] == '<')
         {
             hasLangle = 1;
+            
+        }
+        
+        if (head[i] == '>')
+        {
+            break;
+            
         }
         
     }
@@ -172,10 +221,13 @@ char* getName(char* head)
         if (head[i] != '"' && hasQuote == 1 )
         {
             name[indexN] = head[i];
+            indexN++;
         }
         
         if (head[i] == '"')
             hasQuote++;
+        if (hasQuote == 2)
+            break;
     }
     
     return name;
@@ -185,6 +237,7 @@ char* getName(char* head)
 
 char* constructHead(char* head,char* email)
 {
+    
     char* constructed = malloc(sizeof(char)*200);
     memset(constructed, '\0', 200);
     strcpy(constructed, head);
@@ -214,6 +267,7 @@ char* constructBody(int n, char** entireEmail,char* name, char* email)
     int i;
     char* body = malloc(sizeof(char)*4096);
     memset(body, '\0', 4096);
+    //printf("Construting body with name: %s\n",name);
     strcpy(body, constructFrom(name, email));
 
     for(i = 2; i < n; i++)
@@ -225,11 +279,59 @@ char* constructBody(int n, char** entireEmail,char* name, char* email)
     return body;
 }
 
-int sendEmail()
+char* getHostURL(char* email)
 {
-    char* hostIp = getAddressIp(getMailUrl("uic.edu"));
-    printf("Host ip: %s\n",hostIp);
+    int i;
+    int passedAt = 0;
+    char* url = malloc(sizeof(char)*strlen(email));
+    memset(url, '\0', sizeof(char)*strlen(email));
+    int index = 0;
+    for(i = 0; i < strlen(email); i++)
+    {
+        if(email[i] != '@' && passedAt == 1)
+        {
+            url[index] = email[i];
+            index++;
+        }
+        
+        if(email[i] == '@')
+        {
+            passedAt = 1;
+        }
+        
+    }
     
+    return url;
+}
+
+int sendEmailWithParm(int n, char** entireEmail)
+{
+    char* fromAddr = getEmailAddress(entireEmail[0]);
+    char* rcptAddr = getEmailAddress(entireEmail[1]);
+    char* senderName = getName(entireEmail[0]);
+    
+    if (isEmailValid(rcptAddr) == 0)
+    {
+        printf("%s  is not a valid email address\n",rcptAddr);
+        return -1;
+    }
+    
+    char* url = getHostURL(rcptAddr);
+    //printf("In sendEmail with Parm Host url: %s\n",url);
+    //printf("url length: %d\n",strlen(url));
+    char* mailServer = getMailUrl(url);
+    
+    if(mailServer == NULL)
+    {
+        printf("mailServer = %s\n",mailServer);
+        printf("%s not a valid url\n",url);
+        return -1;
+    }
+    
+    printf("!!!!!!!!!!Mail Server: %s\n",mailServer);
+    printf("!!!!!!!!!!Mail Server: %d\n",mailServer);
+    char* hostIp = getAddressIp(mailServer);
+    //printf("Host ip: %s\n",hostIp);
     
     mySock = socket(AF_INET,SOCK_STREAM,0);
     
@@ -242,8 +344,6 @@ int sendEmail()
         return -1;
     }
     
-    printf("Socket number: %d\n",mySock);
-    
     
     if(inet_pton(AF_INET, hostIp, &(mySockAddr.sin_addr))<=0)
     {
@@ -254,7 +354,6 @@ int sendEmail()
     mySockAddr.sin_port = htons(25);
     
     
-    printf("socket Connecting\n");
     int connectCode = connect(mySock, (struct sockaddr*)&mySockAddr, sizeof(mySockAddr));
     if (connectCode < 0)
     {
@@ -262,38 +361,62 @@ int sendEmail()
         return 1;
     }
     
-    printf("mysocket connection: %d\n",connectCode);
-    
     
     char helo[] = "helo Heng\r\n";
-    char* from = constructHead("mail from:", "busy@testing.com");
-    char* to = constructHead("rcpt to:", "hli212@uic.edu");
+    char* from = constructHead("mail from:", fromAddr);
+    char* to = constructHead("rcpt to:", rcptAddr);
     char data[] = "data\r\n";
     
-    char body[] = "From: Busy <busy@testing.com>\r\nSubject: Testing before mod\r\n\r\n TEST before mod!!!\r\n.\r\n";
-    
+    char* body = constructBody(n, entireEmail, senderName, fromAddr);
     readMsg();
     sendMsg(helo);
-    readMsg();
+    if(readMsg() == 0)
+    {
+        close(mySock);
+  
+        return 0;
+    }
     
     sendMsg(from);
-    readMsg();
+    if(readMsg() == 0)
+    {
+        close(mySock);
+
+        return 0;
+    }
     
     sendMsg(to);
-    readMsg();
+    if(readMsg() == 0)
+    {
+        close(mySock);
+
+        return 0;
+    }
     
     sendMsg(data);
-    readMsg();
+    if(readMsg() == 0)
+    {
+        close(mySock);
+
+        return 0;
+    }
     
     sendMsg(body);
-    readMsg();
+    if(readMsg() == 0)
+    {
+        close(mySock);
+
+        return 0;
+    }
     sendMsg("QUIT\r\n");
-    
+    readMsg();
     
     close(mySock);
     
     return 0;
 }
+
+
 
 void readFile(char* fileName)
 {
@@ -310,21 +433,21 @@ void readFile(char* fileName)
     char buffer[1025];
     //memset(buffer, '\0', sizeof(char)*(BUFSIZ+1));
     int numLine = 0;
-    int j;
     char** fullEmail = (char**)malloc(sizeof(char*)*1024);
     while (fgets(buffer, 1024, emailFile))
     {
-        printf("This is what I read: %s",buffer);
-        printf("This is the length: %d\n",strlen(buffer));
+        //printf("This is what I read: %s",buffer);
+        //printf("This is the length: %d\n",strlen(buffer));
         
         fullEmail[numLine] = malloc(sizeof(char)*(strlen(buffer)+1));
         
         memset(fullEmail[numLine], '\0', sizeof(char)*(strlen(buffer)+1));
         strcpy(fullEmail[numLine], buffer);
+        numLine++;
     }
     
-    
     fclose(emailFile);
+    sendEmailWithParm(numLine, fullEmail);
     
 }
 
@@ -333,17 +456,18 @@ int main(int argc, char** argv)
     
     int i = 0;
     
+    //getMailUrl("cs.uic.edu");
+    
     
     for (i = 1; i < argc; i++)
     {
-        //printf("%s\n",argv[i]);
+        printf("========================================\n");
+        printf("%s\n",argv[i]);
         
         readFile(argv[i]);
+        printf("========================================\n");
     }
 
-    sendEmail();
     
-    
-    //printf("This is mail: %s\n",getMailUrl( "uic.edu"));
     return 0;
 }
